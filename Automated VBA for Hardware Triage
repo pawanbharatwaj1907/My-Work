@@ -1,0 +1,96 @@
+# Automated VBA Script for Hardware Triaging  
+# The GUI automation creates an excel tool to interact with the DMS server using a VBA Macros script mentioned below.
+
+Sub Openchrome()
+On Error GoTo ErrorHandler
+Dim bot As New WebDriver
+Dim query As String
+Dim searchkeyword As String
+Dim downloadPath As String
+
+# ' Prompt the user for a search keyword
+query = InputBox("Enter the search keyword", "DMS Search")
+
+# ' Validate the user input
+If query = "" Then
+MsgBox "Search keyword cannot be empty.", vbExclamation
+Exit Sub
+End If
+searchkeyword = Replace(query, " ", "+")
+
+# ' Define the download path
+downloadPath = "C:\Users\PBHARATW\Downloads" ' Change this to your desired download directory
+
+# ' Set Chrome options for automatic download
+Dim ChromeOptions As New ChromeOptions
+ChromeOptions.AddArgument "start-maximized"
+ChromeOptions.AddArgument "disable-infobars"
+ChromeOptions.AddUserProfilePreference "download.default_directory", downloadPath
+ChromeOptions.AddUserProfilePreference "download.prompt_for_download", False
+ChromeOptions.AddUserProfilePreference "profile.default_content_semng_values.automatic_downloads", 1
+
+# ' Start Chrome with the specified options and link = provide the the link you want to access
+bot.Start "chrome", "link ", ChromeOptions
+bot.Get "/"
+
+# ' Find the search input field and enter the search keyword
+bot.FindElementByName("what_to_search").SendKeys searchkeyword 
+20
+
+# ' Click the "go!" button
+bot.FindElementById("search").Click
+
+# ' Wait for the search results to load
+bot.Wait 5000 ' Adjust the waiting time if needed
+
+# ' Wait for the "Excel report" button to be clickable and click it
+Dim retries As Integer
+retries = 10
+Do While retries > 0
+On Error Resume Next
+If Not bot.FindElementById("Myid").IsDisplayed Then
+bot.Wait 1000
+retries = retries - 1
+Else
+bot.FindElementById("Myid").Click
+Exit Do
+End If
+On Error GoTo 0
+Loop
+
+# ' Wait for the download to complete (by checking for a new file in the download directory)
+Dim fso As Object
+Dim folder As Object
+Dim file As Object
+Dim fileFound As Boolean
+Set fso = CreateObject("Scripting.FileSystemObject")
+Set folder = fso.GetFolder(downloadPath)
+fileFound = False
+
+# ' Wait for a maximum of 30 seconds for the file to appear
+For i = 1 To 30
+For Each file In folder.Files
+If file.DateLastModified > Now - TimeValue("00:00:30") Then ' Adjust time value if needed
+fileFound = True
+Exit For
+End If
+Next file
+If fileFound Then Exit For
+Application.Wait Now + TimeValue("00:00:01")
+Next i
+If fileFound Then
+MsgBox "Excel report downloaded successfully."
+Else
+MsgBox "Failed to download Excel report."
+End If
+
+# ' Clean up
+# ' bot.Quit
+Exit Sub
+ErrorHandler:
+MsgBox "An error occurred: " & Err.Description, vbCritical
+
+# ' Clean up
+On Error Resume Next
+bot.Quit
+End Sub
