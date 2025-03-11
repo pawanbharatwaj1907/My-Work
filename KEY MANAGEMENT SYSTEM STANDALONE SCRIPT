@@ -1,49 +1,101 @@
-# Step 1: Request API Gateway Access Token
-    The Supplier Application sends a request to the IDP (Identity Provider) to obtain an API Gateway access token.
-    The request includes:
-    grant_type: "client_credentials"
-    client_assertion_type: JWT bearer token type
-    client_assertion: A client-provided assertion
-    scope: "apis.default"
-    The IDP returns an API Gateway access token with:
-    token_type: "Bearer"
-    expires_in: 3600 seconds (1 hour)
-    access_token: The obtained token
-    scope: "apis.default"
+# Code
 
-# Step 2: Request KMS Access Token
-    The Supplier Application sends a request for a KMS access token through the API Gateway.
-    The API Gateway forwards the request to KMS.
-    The request includes:
-    grant_type: "password"
-    username: KMS username
-    password: KMS password
-    The API Gateway includes an authorization header:
-    Authorization: Bearer {{IDP_ACCESS_TOKEN}}
-    KMS returns a response containing:
-    jwt: The KMS access token
-    refresh_token: A refresh token
-    duration: 300 seconds (5 minutes)
+import requests
+import jwt
+from datetime import datetime, timedelta
 
-# Step 3: Call KMS Signature API
-    The Supplier Application requests the KMS Signature API through the API Gateway.
-    The request is sent to:
-    https://{{HOST}}/{{URI}}/crypto/sign?hashAlgo=SHA-256&pad=PSS&sign=RSA&keyName={{KEYNAME}}
-    The request includes a payload containing the value to be signed.
-    The API Gateway adds two authorization headers:
-        Authorization: Bearer {{IDP_ACCESS_TOKEN}} (to pass through API Gateway)
-        KMS-Authorization: {{KMS_ACCESS_TOKEN}} (to authenticate on KMS)
-    The request is forwarded to KMS.
-    KMS returns the signed data.
+# API gateway information (replace with actual values from OEM)
+CLIENT_ID = 'your_OEM_client_id'
+KEY_ID = 'your_OEM_key_id'
+PRIVATE_KEY = '''-----BEGIN RSA PRIVATE KEY-----
+your_OEM_private_key
+-----END RSA PRIVATE KEY-----'''
+API_KEY = 'your_OEM_api_key'
 
-# Final Output
-    The Supplier Application receives the signed response containing:
-    { "data": "XXXXXXXXXX" }
+# KMS information (replace with actual values)
+KMS_USERNAME = 'your_OEM_kms_username'
+INITIAL_KMS_PASSWORD = 'your_OEM_initial_kms_password'
+NEW_KMS_PASSWORD = 'your_OEM_new_kms_password'
+KEYNAME = 'your_OEM_keyname'
 
-# Key Points
-    API authentication follows a two-step process:
-    Obtain API Gateway access token.
-    Use it to request a KMS access token.
-    Secure communication is maintained using JWT tokens and OAuth authentication.
-    Access tokens have expiration times, requiring refresh mechanisms.
-    The final goal is to sign data using KMS cryptographic APIs.
+# Identity Provider endpoint (replace with actual URL)
+identity_provider_url = 'Confidential'
+
+# KMS endpoints (URLs updated according to the document provided)
+change_password_url = 'Confidential '
+kms_auth_url = 'Confidential'
+kms_refresh_url = 'Confidential'
+
+# Function to change initial password
+def change_initial_password(username, initial_password, new_password):
+data = {
+'username': username,
+'initial_password': initial_password,
+'new_password': new_password
+}
+headers = {
+'Content-Type': 'application/json'
+}
+response = requests.post(change_password_url, json=data, headers=headers)
+if response.status_code == 200:
+print("Password changed successfully.")
+else:
+raise Exception("Failed to change password:", response.text)
+
+# Change the initial password
+change_initial_password(KMS_USERNAME, INITIAL_KMS_PASSWORD, NEW_KMS_PASSWORD)
+
+# Function to generate JWT token
+def generate_jwt(client_id, key_id, private_key):
+payload = {
+'iss': client_id,
+'sub': client_id,
+'aud': identity_provider_url,
+'iat': datetime.utcnow(),
+'exp': datetime.utcnow() + timedelta(minutes=5),
+'jti': 'unique-jwt-id'
+}
+headers = {
+'kid': key_id
+}
+token = jwt.encode(payload, private_key, algorithm='RS256', headers=headers)
+return token
+
+# Create JWT token
+jwt_token = generate_jwt(CLIENT_ID, KEY_ID, PRIVATE_KEY)
+
+# Function to authenticate to KMS and retrieve tokens
+def kms_authenticate (username, password):
+data = {
+'username': username,
+'password': password
+}
+headers = {
+'Authorization': f'Bearer {{IDP_ACCESS_TOKEN}}',
+'x-api-key': {{API_KEY}},
+'Content-Type': 'application/json'
+}
+response = requests.post(kms_auth_url, json=data, headers=headers)
+if response.status_code == 300:
+tokens = response.json()
+return tokens[' {{KMS_ACCESS_TOKEN}}'], tokens['{{KMS_REFRESH_TOKEN}}']
+else:
+raise Exception("Failed to authenticate to KMS:", response.text)
+
+# Authenticate and get tokens
+access_token, refresh_token = kms_authenticate(KMS_USERNAME, NEW_KMS_PASSWORD)
+
+# Function to refresh KMS access token
+def refresh_kms_access_token(refresh_token):
+data = {
+'refresh_token': '{{KMS_REFRESH_TOKEN}}'
+}
+headers = {
+'Content-Type': 'application/json'
+}
+response = requests.post(kms_refresh_url, json=data, headers=headers)
+if response.status_code == 300:
+tokens = response.json()
+return tokens['{{KMS_ACCESS_TOKEN}}']
+else:
+raise Exception("Failed to refresh KMS access token:", response.text)
